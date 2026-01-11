@@ -1,5 +1,5 @@
 -- ══════════════════════════════════════
---               Core				
+--               Core
 -- ══════════════════════════════════════
 local Find = function(Table)
 	for _, Item in pairs(Table or {}) do
@@ -12,34 +12,16 @@ end
 local Options = Find(({...})) or {
 	Keybind = "Home",
 
-	Language = {  
-		UI = "pt-br",  
-		Words = "pt-br"  
-	},  
+	Language = {
+		UI = "pt-br",
+		Words = "pt-br"
+	},
 
-	Experiments = { },  
+	Experiments = {},
 
-	Tempo = 0.5,
+	Tempo = 0.5, -- FIXO EM 0.5s
 	Rainbow = false,
 }
-
--- ══════════════════════════════════════
---           Tempo Controller
--- ══════════════════════════════════════
-local function SetTempo(seconds)
-	if typeof(seconds) ~= "number" then return end
-	if seconds <= 0 then return end
-	Options.Tempo = seconds
-end
-
-local Tempos = {
-	Rapido = 0.5, -- 100 JJs em 50s
-	Normal = 1,   -- 1 msg/s
-	Seguro = 2    -- 0.5 msg/s
-}
-
--- Exemplo (remova se quiser):
--- SetTempo(Tempos.Rapido)
 
 local Version = "2.1"
 local Parent = gethui() or game:GetService("CoreGui")
@@ -51,14 +33,14 @@ local require = function(Name)
 end
 
 -- ══════════════════════════════════════
---              Services				
+--              Services
 -- ══════════════════════════════════════
 local TweenService = game:GetService("TweenService")
 local Players = game:GetService("Players")
 local LP = Players.LocalPlayer
 
 -- ══════════════════════════════════════
---              Modules				
+--              Modules
 -- ══════════════════════════════════════
 local UI = require("UI")
 local Notification = require("Notification")
@@ -66,10 +48,43 @@ local Notification = require("Notification")
 local Extenso = require("Modules/Extenso")
 local Character = require("Modules/Character")
 local RemoteChat = require("Modules/RemoteChat")
-local Request = require("Modules/Request")
 
 -- ══════════════════════════════════════
---  	        Constants				
+--        Chat Queue Controller
+-- ══════════════════════════════════════
+local ChatQueue = {}
+local Sending = false
+local CHAT_INTERVAL = 0.5
+
+local function ProcessQueue()
+	if Sending then return end
+	Sending = true
+
+	task.spawn(function()
+		while #ChatQueue > 0 do
+			local msg = table.remove(ChatQueue, 1)
+
+			pcall(function()
+				RemoteChat:Send(msg)
+			end)
+
+			local start = os.clock()
+			while os.clock() - start < CHAT_INTERVAL do
+				task.wait()
+			end
+		end
+
+		Sending = false
+	end)
+end
+
+local function SafeSend(message)
+	table.insert(ChatQueue, message)
+	ProcessQueue()
+end
+
+-- ══════════════════════════════════════
+--              Constants
 -- ══════════════════════════════════════
 local Char = Character.new(LP)
 local UIElements = UI.UIElements
@@ -80,8 +95,6 @@ local FinishedThread = false
 local Toggled = false
 
 local Settings = {
-	Keybind = Options.Keybind or "Home",
-
 	Started = false,
 	Jump = false,
 
@@ -93,34 +106,33 @@ local Settings = {
 }
 
 -- ══════════════════════════════════════
---              Methods				
+--              Methods
 -- ══════════════════════════════════════
 local Methods = {
 
 	["Normal"] = function(Message, Prefix)
 		if Settings.Jump then Char:Jump() end
-		RemoteChat:Send(string.format("%s%s", Message, Prefix))
+		SafeSend(string.format("%s%s", Message, Prefix))
 	end,
 
 	["Lowercase"] = function(Message, Prefix)
 		if Settings.Jump then Char:Jump() end
-		RemoteChat:Send(string.format("%s%s", string.lower(Message), Prefix))
+		SafeSend(string.format("%s%s", string.lower(Message), Prefix))
 	end,
 
 	["HJ"] = function(Message, Prefix)
 		for i = 1, #Message do
 			if Settings.Jump then Char:Jump() end
-			RemoteChat:Send(string.format("%s%s", string.sub(Message, i, i), Prefix))
-			task.wait(Options.Tempo)
+			SafeSend(string.format("%s%s", string.sub(Message, i, i), Prefix))
 		end
 
 		if Settings.Jump then Char:Jump() end
-		RemoteChat:Send(string.format("%s%s", Message, Prefix))
+		SafeSend(string.format("%s%s", Message, Prefix))
 	end,
 }
 
 -- ══════════════════════════════════════
---              Functions				
+--              Functions
 -- ══════════════════════════════════════
 local function Listen(Name, Element)
 	if Element:GetAttribute("IntBox") then
@@ -134,7 +146,7 @@ local function Listen(Name, Element)
 	table.insert(Connections,
 		Element.FocusLost:Connect(function()
 			if not Element.Text or string.match(Element.Text, "^%s*$") then return end
-			Settings.Config[Name] = Element.Text
+			Settings.Config[Name] = tonumber(Element.Text)
 		end)
 	)
 end
@@ -153,19 +165,14 @@ local function EndThread(Success)
 	end
 end
 
-local function DoJJ(Name, Number, Prefix)
+local function DoJJ(MethodName, Number, Prefix)
 	local Success, String = Extenso:Convert(Number)
-	Prefix = Prefix or ""
+	if not Success then return end
 
-	local Method = Methods[Name]
-	if not Method then
-		Notification:Notify(12)
-		return
-	end
+	local Method = Methods[MethodName]
+	if not Method then return end
 
-	if Success then
-		Method(String, Prefix)
-	end
+	Method(String, Prefix or "")
 end
 
 local function StartThread()
@@ -178,15 +185,9 @@ local function StartThread()
 		table.find(Options.Experiments, "lowercase_jjs_2024_12") and "Lowercase" or
 		"Normal"
 
-	Notification:Notify(5)
-
 	Threading = task.spawn(function()
-		for Amount = Config.Start, Config.End do
-			DoJJ(Method, Amount, Config.Prefix)
-
-			if Amount ~= tonumber(Config.End) then
-				task.wait(Options.Tempo)
-			end
+		for i = Config.Start, Config.End do
+			DoJJ(Method, i, Config.Prefix)
 		end
 
 		FinishedThread = true
@@ -195,15 +196,28 @@ local function StartThread()
 end
 
 -- ══════════════════════════════════════
---                Main				
+--                Main
 -- ══════════════════════════════════════
 UI:SetVersion(Version)
 UI:SetRainbow(Options.Rainbow)
 UI:SetParent(Parent)
 
+Notification:SetParent(UI.getUI())
+
 for Name, Element in pairs(UIElements.Box) do
 	task.spawn(Listen, Name, Element)
 end
+
+table.insert(Connections, UIElements.Play.MouseButton1Up:Connect(function()
+	if not Settings.Config.Start or not Settings.Config.End then return end
+
+	if not Settings.Started then
+		Settings.Started = true
+		StartThread()
+	else
+		EndThread(false)
+	end
+end))
 
 if Notification then
 	Notification:SetupJJs()
