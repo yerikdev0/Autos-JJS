@@ -18,8 +18,7 @@ local Options = Find(({...})) or {
 	},
 
 	Experiments = {},
-
-	Tempo = 0.5, -- FIXO EM 0.5s
+	Tempo = 0.5,
 	Rainbow = false,
 }
 
@@ -35,7 +34,6 @@ end
 -- ══════════════════════════════════════
 --              Services
 -- ══════════════════════════════════════
-local TweenService = game:GetService("TweenService")
 local Players = game:GetService("Players")
 local LP = Players.LocalPlayer
 
@@ -44,7 +42,6 @@ local LP = Players.LocalPlayer
 -- ══════════════════════════════════════
 local UI = require("UI")
 local Notification = require("Notification")
-
 local Extenso = require("Modules/Extenso")
 local Character = require("Modules/Character")
 local RemoteChat = require("Modules/RemoteChat")
@@ -73,13 +70,12 @@ local function ProcessQueue()
 				task.wait()
 			end
 		end
-
 		Sending = false
 	end)
 end
 
 local function SafeSend(message)
-	table.insert(ChatQueue, message)
+	table.insert(ChatQueue, tostring(message))
 	ProcessQueue()
 end
 
@@ -92,7 +88,6 @@ local Connections = {}
 
 local Threading
 local FinishedThread = false
-local Toggled = false
 
 local Settings = {
 	Started = false,
@@ -101,7 +96,6 @@ local Settings = {
 	Config = {
 		Start = nil,
 		End = nil,
-		Prefix = nil,
 	}
 }
 
@@ -110,24 +104,20 @@ local Settings = {
 -- ══════════════════════════════════════
 local Methods = {
 
-	["Normal"] = function(Message, Prefix)
+	["Normal"] = function(Message)
 		if Settings.Jump then Char:Jump() end
-		SafeSend(string.format("%s%s", Message, Prefix))
+		SafeSend(string.upper(Message) .. " !")
 	end,
 
-	["Lowercase"] = function(Message, Prefix)
+	["Lowercase"] = function(Message)
 		if Settings.Jump then Char:Jump() end
-		SafeSend(string.format("%s%s", string.lower(Message), Prefix))
+		SafeSend(string.upper(Message) .. " !")
 	end,
 
-	["HJ"] = function(Message, Prefix)
-		for i = 1, #Message do
-			if Settings.Jump then Char:Jump() end
-			SafeSend(string.format("%s%s", string.sub(Message, i, i), Prefix))
-		end
-
+	["HJ"] = function(Message)
+		-- HJ não faz sentido aqui, então envia normal
 		if Settings.Jump then Char:Jump() end
-		SafeSend(string.format("%s%s", Message, Prefix))
+		SafeSend(string.upper(Message) .. " !")
 	end,
 }
 
@@ -151,47 +141,36 @@ local function Listen(Name, Element)
 	)
 end
 
-local function EndThread(Success)
+local function EndThread()
 	if Threading then
-		if not FinishedThread then
-			task.cancel(Threading)
-		end
-
+		task.cancel(Threading)
 		Threading = nil
 		FinishedThread = false
 		Settings.Started = false
-
-		Notification:Notify(Success and 6 or 12)
 	end
 end
 
-local function DoJJ(MethodName, Number, Prefix)
+local function DoJJ(MethodName, Number)
 	local Success, String = Extenso:Convert(Number)
 	if not Success then return end
 
 	local Method = Methods[MethodName]
-	if not Method then return end
-
-	Method(String, Prefix or "")
+	if Method then
+		Method(String)
+	end
 end
 
 local function StartThread()
 	local Config = Settings.Config
 	if not Config.Start or not Config.End then return end
-	if Threading then EndThread(false) return end
-
-	local Method =
-		table.find(Options.Experiments, "hell_jacks_2024_02-dev") and "HJ" or
-		table.find(Options.Experiments, "lowercase_jjs_2024_12") and "Lowercase" or
-		"Normal"
+	if Threading then EndThread() return end
 
 	Threading = task.spawn(function()
 		for i = Config.Start, Config.End do
-			DoJJ(Method, i, Config.Prefix)
+			DoJJ("Normal", i)
 		end
-
 		FinishedThread = true
-		EndThread(true)
+		EndThread()
 	end)
 end
 
@@ -215,7 +194,7 @@ table.insert(Connections, UIElements.Play.MouseButton1Up:Connect(function()
 		Settings.Started = true
 		StartThread()
 	else
-		EndThread(false)
+		EndThread()
 	end
 end))
 
